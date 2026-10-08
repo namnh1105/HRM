@@ -1,0 +1,87 @@
+{
+  "expo": {
+    "name": "Scrolla FE",
+    "slug": "scrolla-fe",
+    "owner": "ninhhainam12",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "scrolla-fe",
+    "userInterfaceStyle": "light",
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
+    "experiments": {
+      "reactCompiler": true
+    },
+    "splash": {
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.scrolla.fe"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.scrolla.fe",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
+      ],
+      "googleServicesFile": "./google-services.json"
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "newArchEnabled": true,
+    "extra": {
+      "apiBaseUrl": "https://worksphere.bitoj.io.vn/api/v1",
+      "eas": {
+        "projectId": "caead81b-fa83-4399-add5-751b9c8aeff0"
+      }
+    },
+    "plugins": [
+      "expo-web-browser",
+      "./plugins/withAndroidManifestFix",
+      [
+        "expo-notifications",
+        {
+          "color": "#6B4CE6"
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Ứng dụng cần quyền truy cập camera để quay video",
+          "microphonePermission": "Ứng dụng cần quyền truy cập microphone để ghi âm cho video",
+          "recordAudioAndroid": true
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Ứng dụng cần quyền truy cập thư viện ảnh để chọn thumbnail"
+        }
+      ],
+      "expo-font",
+      "expo-video",
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Ứng dụng cần quyền truy cập vị trí để xác thực chấm công",
+          "locationWhenInUsePermission": "Ứng dụng cần quyền truy cập vị trí để xác thực chấm công"
+        }
+      ]
+    ]
+  }
+}

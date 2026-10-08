@@ -1,0 +1,37 @@
+# GPU-enabled docker-compose for Face Recognition API
+# Use this for production with NVIDIA GPU support
+
+services:
+  worksphere_face:
+    image: worksphere_face:latest
+    container_name: worksphere_face
+    user: "1001:1001"
+    env_file:
+      - .env
+    ports:
+      - "${APP_PORT:-8001}:8000"
+    volumes:
+      - /opt/worksphere_face/logs:/opt/faceapi/logs
+      - /opt/worksphere_face/face_index.bin:/opt/faceapi/face_index.bin
+      - /opt/worksphere_face/employee_id_map.npy:/opt/faceapi/employee_id_map.npy
+    restart: unless-stopped
+    networks:
+      - worksphere-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+networks:
+  worksphere-network:
+    external: true
+    name: worksphere_worksphere-network

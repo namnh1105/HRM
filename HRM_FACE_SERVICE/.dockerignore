@@ -1,0 +1,29 @@
+# Ignore Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ignore environments
+.env
+.venv/
+venv/
+
+# Ignore IDE
+.idea/
+.vscode/
+
+# Ignore logs
+logs/
+*.log
+
+# Ignore FAISS index files
+face_index.bin
+employee_id_map.npy
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
+
+# Ignore temp files
+*.tmp
+tmp/

@@ -1,0 +1,83 @@
+# GPU-enabled Dockerfile for Face Recognition API
+# Use this for production with NVIDIA GPU support
+
+FROM nvidia/cuda:11.8-cudnn8-runtime-ubuntu22.04
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.10 \
+    python3-pip \
+    python3.10-dev \
+    build-essential \
+    cmake \
+    git \
+    libgl1 \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
+    libgomp1 \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set python3.10 as default
+RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1 && \
+    update-alternatives --install /usr/bin/pip pip /usr/bin/pip3 1
+
+# Create application user
+RUN groupadd -g 1001 faceapi && \
+    useradd -u 1001 -g faceapi -s /bin/bash -m faceapi
+
+# Create application directory
+RUN mkdir -p /opt/faceapi/logs && \
+    mkdir -p /opt/faceapi/models && \
+    chown -R faceapi:faceapi /opt/faceapi && \
+    chmod -R 755 /opt/faceapi
+
+WORKDIR /opt/faceapi
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir \
+    fastapi \
+    uvicorn[standard] \
+    sqlalchemy[asyncio] \
+    asyncpg \
+    pydantic[email] \
+    pydantic-settings \
+    python-multipart \
+    opencv-python-headless \
+    numpy \
+    geopy \
+    insightface \
+    onnxruntime-gpu \
+    redis \
+    psycopg2-binary \
+    tzdata
+
+# Install FAISS GPU
+RUN pip install --no-cache-dir faiss-gpu
+
+# Copy application code
+COPY --chown=faceapi:faceapi . .
+
+# Set environment path
+ENV PYTHONPATH=/opt/faceapi
+
+# Change to non-root user
+USER faceapi
+
+# Expose the port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/')" || exit 1
+
+# Run the application
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]

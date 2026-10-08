@@ -1,0 +1,299 @@
+name: Deploy Worksphere Face API to VPS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+      use_gpu:
+        description: 'Use GPU-enabled image'
+        required: true
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+env:
+  PYTHON_VERSION: '3.10'
+  IMAGE_NAME: worksphere_face
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-asyncio httpx
+          pip install \
+            fastapi uvicorn sqlalchemy asyncpg \
+            pydantic pydantic-settings python-multipart \
+            redis psycopg2-binary tzdata geopy \
+            numpy faiss-cpu opencv-python-headless insightface onnxruntime
+
+      - name: Run syntax check
+        run: |
+          python -m py_compile app.py
+          python -m py_compile database/config.py
+          python -m py_compile database/session.py
+          python -m py_compile models/employee.py
+          python -m py_compile models/attendance.py
+          python -m py_compile models/work_shift.py
+          python -m py_compile models/employee_work_shift.py
+          python -m py_compile services/face_core.py
+          python -m py_compile services/face_recognition.py
+          python -m py_compile redis_queue/config.py
+          python -m py_compile redis_queue/queue.py
+          python -m py_compile redis_queue/worker.py
+          python -m py_compile redis_queue/jobs/face_registration.py
+          python -m py_compile utils/timezone.py
+          python -m py_compile utils/response.py
+          python -m py_compile routers/face_recognition.py
+
+      - name: Run tests
+        run: |
+          python -m pytest tests/ -v --tb=short
+
+  build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Determine Dockerfile
+        id: dockerfile
+        run: |
+          if [ "${{ github.event.inputs.use_gpu }}" == "true" ]; then
+            echo "dockerfile=Dockerfile.gpu" >> $GITHUB_OUTPUT
+          else
+            echo "dockerfile=Dockerfile" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./${{ steps.dockerfile.outputs.dockerfile }}
+          push: false
+          outputs: type=docker,dest=/tmp/worksphere_face-image.tar
+          tags: worksphere_face:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: worksphere_face-docker-image
+          path: /tmp/worksphere_face-image.tar
+          retention-days: 1
+
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+    needs: build
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download Docker image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: worksphere_face-docker-image
+          path: /tmp
+
+      - name: Verify secrets
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          FACE_API_PORT: ${{ secrets.FACE_API_PORT }}
+        run: |
+          for var in VPS_SSH_KEY VPS_HOST VPS_USER; do
+            if [ -z "${!var}" ]; then
+              echo "❌ Secret $var is not set"
+              exit 1
+            fi
+          done
+          echo "✅ All required secrets are configured"
+
+      - name: Setup SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Create deployment directory on VPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh $VPS_USER@$VPS_HOST << 'EOF'
+            sudo mkdir -p /opt/worksphere_face/logs
+            sudo mkdir -p /opt/worksphere_face/backup
+          EOF
+
+      - name: Backup current Docker image
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh $VPS_USER@$VPS_HOST << 'EOF'
+            cd /opt/worksphere_face
+            if docker images | grep -q worksphere_face; then
+              docker tag worksphere_face:latest worksphere_face:backup-$(date +%Y%m%d_%H%M%S) 2>/dev/null || true
+              # Clean up old backup images (keep only 3 most recent)
+              docker images worksphere_face --format "table {{.Tag}}" | grep backup | sort -r | tail -n +4 | xargs -r -I {} docker rmi worksphere_face:{} 2>/dev/null || true
+            fi
+          EOF
+
+      - name: Determine compose file
+        id: composefile
+        run: |
+          if [ "${{ github.event.inputs.use_gpu }}" == "true" ]; then
+            echo "composefile=docker-compose.gpu.yml" >> $GITHUB_OUTPUT
+          else
+            echo "composefile=docker-compose.prod.yml" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Deploy Docker image to VPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          # Copy Docker image
+          scp /tmp/worksphere_face-image.tar $VPS_USER@$VPS_HOST:/tmp/
+          
+          # Copy compose file
+          scp ${{ steps.composefile.outputs.composefile }} $VPS_USER@$VPS_HOST:/tmp/docker-compose.yml
+          
+          ssh -T $VPS_USER@$VPS_HOST << 'EOF'
+            set -e
+          
+            echo "▶ Ensure Docker is running"
+            sudo systemctl start docker
+          
+            echo "▶ Check worksphere network exists"
+            if ! sudo docker network ls | grep -q worksphere-network; then
+              echo "Creating worksphere-network..."
+              sudo docker network create worksphere-network
+            fi
+          
+            echo "▶ Load Docker image"
+            sudo docker load -i /tmp/worksphere_face-image.tar
+          
+            echo "▶ Prepare app directory"
+            sudo mkdir -p /opt/worksphere_face/logs
+            sudo chown -R $USER:$USER /opt/worksphere_face
+            # Set correct permissions for container user (UID 1001)
+            sudo chown -R 1001:1001 /opt/worksphere_face/logs
+            
+            # Create FAISS index files if not exists
+            sudo touch /opt/worksphere_face/face_index.bin
+            sudo touch /opt/worksphere_face/employee_id_map.npy
+            sudo chown 1001:1001 /opt/worksphere_face/face_index.bin
+            sudo chown 1001:1001 /opt/worksphere_face/employee_id_map.npy
+          
+            echo "▶ Move deployment files"
+            mv /tmp/docker-compose.yml /opt/worksphere_face/docker-compose.yml
+          
+            cd /opt/worksphere_face
+          
+            echo "▶ Stop old containers"
+            sudo docker compose down || true
+          
+            echo "▶ Start new containers"
+            sudo docker compose up -d
+          
+            echo "▶ Cleanup"
+            rm -f /tmp/worksphere_face-image.tar
+          EOF
+
+      - name: Verify deployment
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          FACE_API_PORT: ${{ secrets.FACE_API_PORT }}
+        run: |
+          echo "⏳ Waiting for application to start..."
+          sleep 30
+          
+          PORT=${FACE_API_PORT:-8001}
+          
+          ssh $VPS_USER@$VPS_HOST << EOF
+            # Check container status
+            if sudo docker ps | grep -q worksphere_face; then
+              echo "✅ Container is running"
+              
+              # Check health endpoint
+              response=\$(curl -s -o /dev/null -w "%{http_code}" http://localhost:$PORT/ || echo "000")
+              if [ "\$response" == "200" ]; then
+                echo "✅ Application is responding"
+              else
+                echo "⚠️ Application returned status code: \$response"
+                echo "📋 Container logs:"
+                sudo docker logs --tail 50 worksphere_face
+              fi
+            else
+              echo "❌ Container is not running"
+              sudo docker ps -a | grep worksphere_face || true
+              sudo docker logs worksphere_face 2>&1 | tail -50 || true
+              exit 1
+            fi
+          EOF
+
+      - name: Cleanup SSH
+        if: always()
+        run: |
+          rm -f ~/.ssh/id_ed25519
+
+      - name: Deployment Summary
+        run: |
+          echo "🎉 Deployment completed!"
+          echo ""
+          echo "📋 Deployment Details:"
+          echo "  - Service: Worksphere Face API"
+          echo "  - Container: worksphere_face"
+          echo "  - Network: worksphere-network"
+          echo "  - Environment: production"
+          echo "  - GPU Enabled: ${{ github.event.inputs.use_gpu || 'false' }}"
+          echo "  - Timestamp: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"

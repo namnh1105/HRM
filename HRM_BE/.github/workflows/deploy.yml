@@ -1,0 +1,198 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+
+env:
+  JAVA_VERSION: '17'
+  JAVA_DISTRIBUTION: 'temurin'
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Run tests
+        run: ./gradlew test --no-daemon
+        env:
+          SPRING_PROFILES_ACTIVE: test
+          JWT_SECRET: test-secret-key-for-ci-testing-purposes-only-32chars
+          JWT_ACCESS_TOKEN_EXPIRATION: 3600000
+          GOOGLE_OAUTH2_CLIENT_ID: test-client-id
+          GOOGLE_OAUTH2_CLIENT_SECRET: test-client-secret
+
+  build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          outputs: type=docker,dest=/tmp/worksphere-image.tar
+          tags: worksphere:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: worksphere-docker-image
+          path: /tmp/worksphere-image.tar
+          retention-days: 1
+
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+    needs: build
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download Docker image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: worksphere-docker-image
+          path: /tmp
+
+      - name: Verify secrets
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          APP_PORT: ${{ secrets.APP_PORT }}
+        run: |
+          for var in VPS_SSH_KEY VPS_HOST VPS_USER APP_PORT; do
+            if [ -z "${!var}" ]; then
+              echo "❌ Secret $var is not set"
+              exit 1
+            fi
+          done
+          echo "✅ All required secrets are configured"
+
+      - name: Setup SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Create deployment directory on VPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh $VPS_USER@$VPS_HOST << 'EOF'
+            sudo mkdir -p /opt/worksphere/backup
+          EOF
+
+      - name: Backup current Docker image
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh $VPS_USER@$VPS_HOST << 'EOF'
+            cd /opt/worksphere
+            if docker images | grep -q worksphere; then
+              docker tag worksphere:latest worksphere:backup-$(date +%Y%m%d_%H%M%S) 2>/dev/null || true
+              # Clean up old backup images (keep only 3 most recent)
+              docker images worksphere --format "table {{.Tag}}" | grep backup | sort -r | tail -n +4 | xargs -r -I {} docker rmi worksphere:{} 2>/dev/null || true
+            fi
+          EOF
+
+      - name: Deploy Docker image to VPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          # Copy Docker image
+          scp /tmp/worksphere-image.tar $VPS_USER@$VPS_HOST:/tmp/
+          
+          # Copy compose file
+          scp docker-compose.prod.yml $VPS_USER@$VPS_HOST:/tmp/docker-compose.yml
+          
+          ssh -T $VPS_USER@$VPS_HOST << 'EOF'
+            set -e
+          
+            echo "▶ Ensure Docker is running"
+            sudo systemctl start docker
+          
+            echo "▶ Load Docker image"
+            sudo docker load -i /tmp/worksphere-image.tar
+          
+            echo "▶ Prepare app directory"
+            sudo mkdir -p /opt/worksphere/logs
+            sudo chown -R $USER:$USER /opt/worksphere
+            # Set correct permissions for container user (UID 1001)
+            sudo chown -R 1001:1001 /opt/worksphere/logs
+            # Pre-create log files with correct permissions  
+            sudo touch /opt/worksphere/logs/worksphere-production.log
+            sudo touch /opt/worksphere/logs/worksphere-errors.log
+            sudo chown 1001:1001 /opt/worksphere/logs/worksphere-production.log
+            sudo chown 1001:1001 /opt/worksphere/logs/worksphere-errors.log
+            sudo chmod 664 /opt/worksphere/logs/worksphere-production.log
+            sudo chmod 664 /opt/worksphere/logs/worksphere-errors.log
+          
+            echo "▶ Move deployment files"
+            mv /tmp/docker-compose.yml /opt/worksphere/docker-compose.yml
+          
+            cd /opt/worksphere
+          
+            echo "▶ Stop old containers"
+            sudo docker compose down || true
+          
+            echo "▶ Start new containers"
+            sudo docker compose up -d
+          
+            echo "▶ Cleanup"
+            rm -f /tmp/worksphere-image.tar
+          EOF
+

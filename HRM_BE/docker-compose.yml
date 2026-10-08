@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  worksphere:
+    build: .
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-development}
+      - JWT_SECRET=${JWT_SECRET:-dev-secret-key-must-be-at-least-32chars}
+      - JWT_ACCESS_TOKEN_EXPIRATION=${JWT_ACCESS_TOKEN_EXPIRATION:-3600000}
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - GOOGLE_OAUTH2_CLIENT_ID=${GOOGLE_OAUTH2_CLIENT_ID}
+      - GOOGLE_OAUTH2_CLIENT_SECRET=${GOOGLE_OAUTH2_CLIENT_SECRET}
+      - GOOGLE_OAUTH2_REDIRECT_URI=${GOOGLE_OAUTH2_REDIRECT_URI:-http://localhost:8080/login/oauth2/code/google}
+      - SERVER_PORT=8080
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      - OAUTH_SUCCESS_REDIRECT_PATH=${OAUTH_SUCCESS_REDIRECT_PATH:-/oauth/callback}
+    volumes:
+      - ./logs:/opt/worksphere/logs
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - worksphere-network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    networks:
+      - worksphere-network
+    command: redis-server --appendonly yes
+
+networks:
+  worksphere-network:
+    driver: bridge
+
+volumes:
+  redis-data:

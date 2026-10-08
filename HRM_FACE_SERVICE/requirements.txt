@@ -1,0 +1,27 @@
+# Face Recognition Attendance API Dependencies
+
+# Core dependencies
+fastapi
+uvicorn[standard]
+sqlalchemy[asyncio]
+asyncpg
+pydantic[email]
+pydantic-settings
+python-multipart
+tzdata
+
+# Face recognition
+insightface
+opencv-python-headless
+numpy
+onnxruntime
+
+# FAISS for vector similarity search
+faiss-cpu
+
+# Redis queue
+redis
+psycopg2-binary
+
+# Geolocation
+geopy
