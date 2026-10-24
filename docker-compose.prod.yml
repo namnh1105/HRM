@@ -1,0 +1,105 @@
+version: '3.8'
+
+services:
+  # 1. Nginx Reverse Proxy (Cổng giao tiếp duy nhất ra ngoài)
+  nginx:
+    image: nginx:alpine
+    container_name: worksphere_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - worksphere
+      - worksphere_web
+    networks:
+      - worksphere-network
+
+  # 2. Database PostgreSQL
+  postgres:
+    image: postgres:15-alpine
+    container_name: worksphere_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-worksphere}
+      POSTGRES_USER: ${POSTGRES_USER:-worksphere}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-worksphere123}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - worksphere-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-worksphere} -d ${POSTGRES_DB:-worksphere}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 3. Redis Cache & Queue
+  redis:
+    image: redis:7-alpine
+    container_name: worksphere_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    networks:
+      - worksphere-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 4. Backend Spring Boot (API chính)
+  worksphere:
+    image: leebindz/worksphere:latest
+    container_name: worksphere_app
+    restart: unless-stopped
+    user: "1001:1001"
+    env_file:
+      - .env
+    volumes:
+      - ./logs/backend:/opt/worksphere/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - worksphere-network
+
+  # 5. Face Service FastAPI (Nhận diện khuôn mặt)
+  worksphere_face:
+    image: leebindz/worksphere_face:latest
+    container_name: worksphere_face
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./logs/face:/opt/faceapi/logs
+      - face-index-data:/opt/faceapi/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - worksphere-network
+
+  # 6. Web Frontend Next.js
+  worksphere_web:
+    image: leebindz/hrm_web:latest   # Thay bằng tag bạn đã đặt khi build
+    container_name: worksphere_web
+    restart: unless-stopped
+    networks:
+      - worksphere-network
+
+networks:
+  worksphere-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
+  face-index-data:

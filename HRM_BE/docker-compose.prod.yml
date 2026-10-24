@@ -33,7 +33,7 @@ services:
       retries: 5
 
   worksphere:
-    image: worksphere:latest
+    image: leebindz/worksphere:latest
     container_name: worksphere_app
     user: "1001:1001"
     env_file:

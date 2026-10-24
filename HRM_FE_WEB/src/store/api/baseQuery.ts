@@ -8,7 +8,7 @@ import { getAccessToken, getRefreshToken, saveTokens, clearTokens, setStoredUser
 import { logout, setAccessTokenInStore, setCredentials, mapToUserInfo } from '@/store/features/authSlice';
 
 const rawBaseQuery = fetchBaseQuery({
-    baseUrl: process.env.NEXT_PUBLIC_API_BASE_URL,
+    baseUrl: process.env.NEXT_PUBLIC_API_BASE_URL || '/api/v1/',
     prepareHeaders: (headers) => {
         const token = getAccessToken();
         if (token) {

@@ -53,13 +53,7 @@ export default function DashboardPage() {
         return Number.isNaN(date.getTime()) ? 0 : date.getTime();
     };
 
-    const stats: Array<{
-        label: string;
-        value: any;
-        change: string | null;
-        icon: any;
-        color: string;
-    }> = [
+    const stats: Array<{ label: string; value: any; change: string | null; icon: any; color: string }> = [
         { label: 'Tổng nhân viên', value: empStats?.total ?? '—', change: null, icon: Users, color: 'var(--accent-light)' },
         { label: 'Có mặt hôm nay', value: attStats?.active ?? '—', change: null, icon: CheckCircle2, color: 'var(--green)' },
         { label: 'Đang nghỉ phép', value: leaveStats?.active ?? '—', change: null, icon: Calendar, color: 'var(--amber)' },
@@ -103,7 +97,7 @@ export default function DashboardPage() {
             <div className="stat-grid">
                 {stats.map((stat, i) => {
                     const Icon = stat.icon;
-                    const isPositive = stat.change ? stat.change.startsWith('+') : false;
+                    const isPositive = typeof stat.change === 'string' && stat.change.startsWith('+');
                     return (
                         <div key={i} className="stat-card">
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>

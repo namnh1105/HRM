@@ -4,6 +4,7 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
+ENV NEXT_PUBLIC_API_BASE_URL=/api/v1/
 RUN npm run build
 
 # Stage 2: Runner
