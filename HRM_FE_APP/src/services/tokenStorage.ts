@@ -1,17 +1,68 @@
 /**
- * Secure Token Storage Service
+ * Cross-platform Token Storage Service
  *
- * - accessToken  → kept in memory (fast) + SecureStore (restore on app restart)
- * - refreshToken → SecureStore only (Keychain on iOS, Keystore on Android)
- *
- * ❌ NEVER use AsyncStorage / SharedPreferences for tokens.
+ * - Native (iOS/Android): SecureStore (Keychain / Keystore) with AsyncStorage fallback
+ * - Web: localStorage / AsyncStorage (SecureStore not available on web)
  */
+import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const SECURE_KEYS = {
   ACCESS_TOKEN: 'secure_access_token',
   REFRESH_TOKEN: 'secure_refresh_token',
 } as const;
+
+const isWeb = Platform.OS === 'web';
+
+const safeSetItem = async (key: string, value: string): Promise<void> => {
+  if (isWeb) {
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      await AsyncStorage.setItem(key, value);
+    }
+  } else {
+    try {
+      await SecureStore.setItemAsync(key, value);
+    } catch (e) {
+      console.warn(`[TokenStorage] SecureStore setItem failed, falling back to AsyncStorage`, e);
+      await AsyncStorage.setItem(key, value);
+    }
+  }
+};
+
+const safeGetItem = async (key: string): Promise<string | null> => {
+  if (isWeb) {
+    try {
+      const val = localStorage.getItem(key);
+      if (val !== null) return val;
+    } catch {}
+    return await AsyncStorage.getItem(key);
+  } else {
+    try {
+      return await SecureStore.getItemAsync(key);
+    } catch (e) {
+      console.warn(`[TokenStorage] SecureStore getItem failed, falling back to AsyncStorage`, e);
+      return await AsyncStorage.getItem(key);
+    }
+  }
+};
+
+const safeDeleteItem = async (key: string): Promise<void> => {
+  if (isWeb) {
+    try {
+      localStorage.removeItem(key);
+    } catch {}
+    await AsyncStorage.removeItem(key);
+  } else {
+    try {
+      await SecureStore.deleteItemAsync(key);
+    } catch (e) {
+      await AsyncStorage.removeItem(key);
+    }
+  }
+};
 
 // ─── In-memory token (fast, no I/O) ───────────────────────────────────
 let inMemoryAccessToken: string | null = null;
@@ -21,20 +72,20 @@ let inMemoryAccessToken: string | null = null;
 /** Get access token from memory (instant, no async) */
 export const getAccessToken = (): string | null => inMemoryAccessToken;
 
-/** Set access token in memory + persist to SecureStore for restore */
+/** Set access token in memory + persist for restore */
 export const setAccessToken = async (token: string): Promise<void> => {
   inMemoryAccessToken = token;
   try {
-    await SecureStore.setItemAsync(SECURE_KEYS.ACCESS_TOKEN, token);
+    await safeSetItem(SECURE_KEYS.ACCESS_TOKEN, token);
   } catch (error) {
     console.error('[TokenStorage] Failed to persist access token:', error);
   }
 };
 
-/** Restore access token from SecureStore into memory (call on app start) */
+/** Restore access token into memory (call on app start) */
 export const restoreAccessToken = async (): Promise<string | null> => {
   try {
-    const token = await SecureStore.getItemAsync(SECURE_KEYS.ACCESS_TOKEN);
+    const token = await safeGetItem(SECURE_KEYS.ACCESS_TOKEN);
     if (token) {
       inMemoryAccessToken = token;
     }
@@ -47,20 +98,20 @@ export const restoreAccessToken = async (): Promise<string | null> => {
 
 // ─── Refresh Token ────────────────────────────────────────────────────
 
-/** Get refresh token from SecureStore */
+/** Get refresh token */
 export const getRefreshToken = async (): Promise<string | null> => {
   try {
-    return await SecureStore.getItemAsync(SECURE_KEYS.REFRESH_TOKEN);
+    return await safeGetItem(SECURE_KEYS.REFRESH_TOKEN);
   } catch (error) {
     console.error('[TokenStorage] Failed to get refresh token:', error);
     return null;
   }
 };
 
-/** Save refresh token to SecureStore */
+/** Save refresh token */
 export const setRefreshToken = async (token: string): Promise<void> => {
   try {
-    await SecureStore.setItemAsync(SECURE_KEYS.REFRESH_TOKEN, token);
+    await safeSetItem(SECURE_KEYS.REFRESH_TOKEN, token);
   } catch (error) {
     console.error('[TokenStorage] Failed to save refresh token:', error);
   }
@@ -74,21 +125,27 @@ export const saveTokens = async (
   refreshToken: string
 ): Promise<void> => {
   inMemoryAccessToken = accessToken;
-  await Promise.all([
-    SecureStore.setItemAsync(SECURE_KEYS.ACCESS_TOKEN, accessToken),
-    SecureStore.setItemAsync(SECURE_KEYS.REFRESH_TOKEN, refreshToken),
-  ]);
-  console.log('[TokenStorage] Tokens saved to SecureStore');
+  try {
+    await Promise.all([
+      safeSetItem(SECURE_KEYS.ACCESS_TOKEN, accessToken),
+      safeSetItem(SECURE_KEYS.REFRESH_TOKEN, refreshToken),
+    ]);
+    console.log('[TokenStorage] Tokens saved successfully');
+  } catch (error) {
+    console.warn('[TokenStorage] Error saving tokens:', error);
+  }
 };
 
 /** Clear all tokens (logout) */
 export const clearTokens = async (): Promise<void> => {
   inMemoryAccessToken = null;
-  await Promise.all([
-    SecureStore.deleteItemAsync(SECURE_KEYS.ACCESS_TOKEN),
-    SecureStore.deleteItemAsync(SECURE_KEYS.REFRESH_TOKEN),
-  ]).catch((error) => {
+  try {
+    await Promise.all([
+      safeDeleteItem(SECURE_KEYS.ACCESS_TOKEN),
+      safeDeleteItem(SECURE_KEYS.REFRESH_TOKEN),
+    ]);
+    console.log('[TokenStorage] Tokens cleared');
+  } catch (error) {
     console.error('[TokenStorage] Failed to clear tokens:', error);
-  });
-  console.log('[TokenStorage] Tokens cleared');
+  }
 };

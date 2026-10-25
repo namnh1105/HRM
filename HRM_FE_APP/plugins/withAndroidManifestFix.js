@@ -18,6 +18,7 @@ module.exports = function withAndroidManifestFix(config) {
     }
     mainApplication.$['tools:replace'] = 'android:appComponentFactory';
     mainApplication.$['android:appComponentFactory'] = 'androidx.core.app.CoreComponentFactory';
+    mainApplication.$['android:usesCleartextTraffic'] = 'true';
 
     return config;
   });

@@ -5,8 +5,10 @@ export const APP_NAME = 'Scrolla FE';
 export const VERSION = '1.0.0';
 
 // API Configuration
-export const API_BASE_URL = Constants.expoConfig?.extra?.apiBaseUrl || 'http://10.0.2.2:8080/api/v1';
-// 10.0.2.2 = host machine from Android emulator. Use localhost for iOS or real device IP for physical device.
+export const API_BASE_URL =
+  process.env.EXPO_PUBLIC_API_BASE_URL ||
+  Constants.expoConfig?.extra?.apiBaseUrl ||
+  'http://10.0.2.2:8080/api/v1';
 
 // Colors
 export const COLORS = {

@@ -2,7 +2,6 @@
   "expo": {
     "name": "Scrolla FE",
     "slug": "scrolla-fe",
-    "owner": "ninhhainam12",
     "version": "1.0.0",
     "orientation": "portrait",
     "scheme": "scrolla-fe",
@@ -37,16 +36,16 @@
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION"
       ],
-      "googleServicesFile": "./google-services.json"
+      "usesCleartextTraffic": true
     },
     "web": {
       "bundler": "metro"
     },
     "newArchEnabled": true,
     "extra": {
-      "apiBaseUrl": "https://worksphere.bitoj.io.vn/api/v1",
+      "apiBaseUrl": "http://136.85.57.5/api/v1",
       "eas": {
-        "projectId": "caead81b-fa83-4399-add5-751b9c8aeff0"
+        "projectId": "081887d9-0ecf-41e7-bfa2-13571d4be4b4"
       }
     },
     "plugins": [
@@ -82,6 +81,7 @@
           "locationWhenInUsePermission": "Ứng dụng cần quyền truy cập vị trí để xác thực chấm công"
         }
       ]
-    ]
+    ],
+    "owner": "leebindz"
   }
 }

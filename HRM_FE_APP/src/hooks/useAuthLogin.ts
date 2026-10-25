@@ -63,18 +63,21 @@ export const useAuthLogin = (navigation: any) => {
           // Map backend user → UserInfo (consistent camelCase format)
           const mappedUser = mapToUserInfo(result.data.user);
           
-          // Save mapped user to AsyncStorage (so restore reads the same format)
-          await saveAuthData(result.data.accessToken, result.data.refreshToken, mappedUser);
-          
-          // Update Redux state - this triggers RootNavigator
+          // Update Redux state immediately - this triggers RootNavigator to switch to MainTabs
           dispatch(setCredentials({
             accessToken: result.data.accessToken,
             user: mappedUser,
           }));
-          
+
           console.log('[useAuthLogin] Login successful, credentials saved');
-          
-          // Auth state change will automatically trigger navigation to MainTabs
+
+          // Save tokens to storage in background
+          try {
+            await saveAuthData(result.data.accessToken, result.data.refreshToken, mappedUser);
+          } catch (storageErr) {
+            console.warn('[useAuthLogin] Warning persisting auth data:', storageErr);
+          }
+
           Alert.alert('Đăng nhập thành công', 'Chào mừng bạn đã quay trở lại!');
         } else {
           console.error('[useAuthLogin] Login failed - invalid response structure:', {
@@ -86,7 +89,10 @@ export const useAuthLogin = (navigation: any) => {
         }
       } else if ('error' in response) {
         console.error('[useAuthLogin] Login error response:', response.error);
-        const errorMessage = response.error?.data?.message || 'Đăng nhập thất bại';
+        const errData = response.error as any;
+        const errorMessage =
+          errData?.data?.message ||
+          (errData?.error ? `Lỗi kết nối: ${errData.error}` : 'Đăng nhập thất bại');
         Alert.alert('Đăng nhập thất bại', errorMessage);
       } else {
         console.error('[useAuthLogin] Unexpected response structure:', response);
