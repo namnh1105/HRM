@@ -417,14 +417,14 @@ export default function AccountsPage() {
                 pagination={
                     meta
                         ? {
-                              page,
-                              totalPages: Math.max(1, meta.totalPages),
-                              totalItems: meta.totalItems,
-                              itemLabel: 'tài khoản',
-                              onPageChange: setPage,
-                              pageSize,
-                              onPageSizeChange: (s) => { setPageSize(s); setPage(0); },
-                          }
+                            page,
+                            totalPages: Math.max(1, meta.totalPages),
+                            totalItems: meta.totalItems,
+                            itemLabel: 'tài khoản',
+                            onPageChange: setPage,
+                            pageSize,
+                            onPageSizeChange: (s) => { setPageSize(s); setPage(0); },
+                        }
                         : null
                 }
             >
