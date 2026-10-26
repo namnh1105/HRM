@@ -63,21 +63,20 @@ export const useAuthLogin = (navigation: any) => {
           // Map backend user → UserInfo (consistent camelCase format)
           const mappedUser = mapToUserInfo(result.data.user);
           
-          // Update Redux state immediately - this triggers RootNavigator to switch to MainTabs
-          dispatch(setCredentials({
-            accessToken: result.data.accessToken,
-            user: mappedUser,
-          }));
-
-          console.log('[useAuthLogin] Login successful, credentials saved');
-
-          // Save tokens to storage in background
+          // Save tokens to storage first so inMemoryAccessToken is available for immediate queries
           try {
             await saveAuthData(result.data.accessToken, result.data.refreshToken, mappedUser);
           } catch (storageErr) {
             console.warn('[useAuthLogin] Warning persisting auth data:', storageErr);
           }
 
+          // Update Redux state - this triggers RootNavigator to switch to MainTabs
+          dispatch(setCredentials({
+            accessToken: result.data.accessToken,
+            user: mappedUser,
+          }));
+
+          console.log('[useAuthLogin] Login successful, credentials saved');
           Alert.alert('Đăng nhập thành công', 'Chào mừng bạn đã quay trở lại!');
         } else {
           console.error('[useAuthLogin] Login failed - invalid response structure:', {

@@ -19,15 +19,18 @@ const safeSetItem = async (key: string, value: string): Promise<void> => {
   if (isWeb) {
     try {
       localStorage.setItem(key, value);
-    } catch {
+    } catch {}
+    try {
       await AsyncStorage.setItem(key, value);
-    }
+    } catch {}
   } else {
     try {
       await SecureStore.setItemAsync(key, value);
     } catch (e) {
       console.warn(`[TokenStorage] SecureStore setItem failed, falling back to AsyncStorage`, e);
-      await AsyncStorage.setItem(key, value);
+      try {
+        await AsyncStorage.setItem(key, value);
+      } catch {}
     }
   }
 };
@@ -41,11 +44,12 @@ const safeGetItem = async (key: string): Promise<string | null> => {
     return await AsyncStorage.getItem(key);
   } else {
     try {
-      return await SecureStore.getItemAsync(key);
+      const val = await SecureStore.getItemAsync(key);
+      if (val !== null) return val;
     } catch (e) {
       console.warn(`[TokenStorage] SecureStore getItem failed, falling back to AsyncStorage`, e);
-      return await AsyncStorage.getItem(key);
     }
+    return await AsyncStorage.getItem(key);
   }
 };
 
@@ -54,14 +58,13 @@ const safeDeleteItem = async (key: string): Promise<void> => {
     try {
       localStorage.removeItem(key);
     } catch {}
-    await AsyncStorage.removeItem(key);
-  } else {
-    try {
-      await SecureStore.deleteItemAsync(key);
-    } catch (e) {
-      await AsyncStorage.removeItem(key);
-    }
   }
+  try {
+    await SecureStore.deleteItemAsync(key);
+  } catch {}
+  try {
+    await AsyncStorage.removeItem(key);
+  } catch {}
 };
 
 // ─── In-memory token (fast, no I/O) ───────────────────────────────────

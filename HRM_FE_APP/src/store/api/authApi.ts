@@ -17,7 +17,6 @@ export const authApi = createApi({
         method: 'POST',
         body: credentials,
       }),
-      invalidatesTags: ['Auth'],
     }),
     register: builder.mutation({
       query: (credentials: RegisterRequest) => ({
@@ -25,7 +24,6 @@ export const authApi = createApi({
         method: 'POST',
         body: credentials,
       }),
-      invalidatesTags: ['Auth'],
     }),
     getUserProfile: builder.query({
       query: () => ({

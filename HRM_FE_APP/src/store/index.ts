@@ -1,6 +1,7 @@
 import { configureStore } from '@reduxjs/toolkit';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { restoreAccessToken, clearTokens, getAccessToken } from '../services/tokenStorage';
+import { restoreAccessToken, clearTokens, getAccessToken, getRefreshToken } from '../services/tokenStorage';
+import { API_BASE_URL } from '../utils/constants';
 import { authApi } from './api/authApi';
 import { userApi } from './api/userApi';
 import { attendanceApi } from './api/attendanceApi';
@@ -75,7 +76,7 @@ export const initializeAuth = async () => {
         // Proactively validate token & refresh user data in background.
         // If access token expired, baseQuery will auto-refresh via refresh token.
         store.dispatch(
-          authApi.endpoints.getUserProfile.initiate(undefined, { forceRefetch: true })
+          authApi.endpoints.getUserProfile.initiate(undefined, { forceRefetch: true, subscribe: false })
         )
           .unwrap()
           .then(async (result: any) => {
@@ -132,8 +133,20 @@ export const performCompleteLogout = async () => {
   try {
     console.log('[Store] Starting complete logout...');
     
-    // 1. Clear tokens from SecureStore (Keychain/Keystore)
-    console.log('[Store] Clearing SecureStore tokens...');
+    // Revoke refresh token on backend
+    try {
+      const refreshToken = await getRefreshToken();
+      if (refreshToken) {
+        fetch(`${API_BASE_URL}/auth/logout`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken }),
+        }).catch(() => {});
+      }
+    } catch {}
+
+    // 1. Clear tokens from memory & storage (SecureStore + AsyncStorage)
+    console.log('[Store] Clearing tokens...');
     await clearTokens();
     
     // 2. Clear non-sensitive data from AsyncStorage
