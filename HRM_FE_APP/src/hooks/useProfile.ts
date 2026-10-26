@@ -1,8 +1,7 @@
 import { Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSelector, useDispatch } from 'react-redux';
-import { RootState } from '../store';
-import { logout } from '../store/slices/authSlice';
+import { RootState, performCompleteLogout } from '../store';
 import { useGetMyProfileQuery } from '../store/api/employeeApi';
 
 interface MenuItem {
@@ -26,7 +25,7 @@ export const useProfile = () => {
       {
         text: 'Đăng xuất',
         style: 'destructive',
-        onPress: () => dispatch(logout()),
+        onPress: () => performCompleteLogout(),
       },
     ]);
   };

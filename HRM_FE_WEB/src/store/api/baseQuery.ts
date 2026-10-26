@@ -72,7 +72,10 @@ export const baseQuery: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryE
 ) => {
     let result = await rawBaseQuery(args, api, extraOptions);
 
-    if (result.error && result.error.status === 401) {
+    const url = typeof args === 'string' ? args : args.url;
+    const isAuthEndpoint = url.includes('auth/login') || url.includes('auth/register') || url.includes('auth/refresh-token');
+
+    if (result.error && result.error.status === 401 && !isAuthEndpoint) {
         if (!refreshPromise) {
             refreshPromise = performRefresh(api, extraOptions).finally(() => {
                 refreshPromise = null;
