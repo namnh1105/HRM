@@ -10,6 +10,10 @@ export default defineConfig({
 
   use: {
     baseURL: process.env.BASE_URL || 'http://136.85.82.55',
+    headless: false,
+    launchOptions: {
+      slowMo: 300,
+    },
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
@@ -19,8 +23,14 @@ export default defineConfig({
 
   projects: [
     {
+      name: 'setup',
+      testMatch: /.*\.setup\.ts/,
+    },
+    {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
+      dependencies: ['setup'],
+      testIgnore: /.*\.setup\.ts/,
     },
   ],
 });
