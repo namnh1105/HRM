@@ -239,7 +239,7 @@ test.describe('TC02 - Trang Admin Dashboard', () => {
     const shortcutLink = page.locator('.table-card', { hasText: 'Lối tắt quản trị' }).getByRole('link', { name: /Tài khoản/ });
 
     await shortcutLink.hover();
-    const borderColor = await shortcutLink.evaluate((el) => el.style.borderColor);
+    const borderColor = await shortcutLink.evaluate((el: HTMLElement) => el.style.borderColor);
     expect(borderColor).toBe('var(--border-accent)');
   });
 
